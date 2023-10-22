@@ -1,9 +1,8 @@
 import os
 import time
-import pyautogui
 import json
+import pyautogui
 from pynput import mouse, keyboard
-
 
 POSICAO_INICIAL = (10,10)
 
@@ -13,6 +12,20 @@ if not os.path.exists(DIRETORIO_GRAVACOES):
 
 acoes = []
 gravando = False
+abortar_reproducao = False
+
+def selecionar_opcao(opcoes):
+    for i, opcao in enumerate(opcoes, 1):
+        print(f"{i}. {opcao}")
+
+    escolha = 0
+    while not (1 <= escolha <= len(opcoes)):
+        try:
+            escolha = int(input(f"Selecione uma opção (1-{len(opcoes)}): "))
+        except ValueError:
+            pass
+
+    return opcoes[escolha - 1]
 
 def on_move(x, y):
     if gravando:
@@ -26,18 +39,18 @@ def on_key_release(key):
     global gravando
     if key == keyboard.KeyCode.from_char('1') and not gravando:
         gravando = True
-        pyautogui.moveTo(*POSICAO_INICIAL)  # Mova para o ponto inicial ao iniciar a gravação
+        pyautogui.moveTo(*POSICAO_INICIAL)
         print("Gravação iniciada. Pressione 'Esc' para parar.")
     elif key == keyboard.Key.esc and gravando:
         gravando = False
         print("Gravação terminada.")
-        return False  # Encerrar o listener
+        return False
 
 def gravar_acoes():
     global acoes
 
     print("Pressione '1' para começar a gravação...")
-    
+
     with mouse.Listener(on_move=on_move, on_click=on_click) as m_listener:
         with keyboard.Listener(on_release=on_key_release) as k_listener:
             k_listener.join()
@@ -45,7 +58,6 @@ def gravar_acoes():
     nome_gravacao = input("Digite um nome para esta gravação: ")
     caminho_arquivo = os.path.join(DIRETORIO_GRAVACOES, nome_gravacao + '.json')
 
-    # Salva as ações em um arquivo
     with open(caminho_arquivo, 'w') as f:
         json.dump(acoes, f)
 
@@ -62,36 +74,53 @@ def carregar_acoes():
     with open(caminho_arquivo, 'r') as f:
         acoes = json.load(f)
 
-def reproduzir_acoes(velocidade='normal', reproduzir_movimentos=True):
-    # Mova o mouse para a posição inicial antes de reproduzir
+def escutar_tecla_abortar(key):
+    global abortar_reproducao
+    if key == keyboard.KeyCode.from_char('q'):
+        abortar_reproducao = True
+        return False
+
+def reproduzir_acoes(reproduzir_movimentos=True):
+    global abortar_reproducao
+
+    listener = keyboard.Listener(on_press=escutar_tecla_abortar)
+    listener.start()
+
     pyautogui.moveTo(*POSICAO_INICIAL)
     time.sleep(1)
 
-    duracao_movimento = 0.1 if velocidade == 'normal' else 0.01
-    duracao_espera = 0.1 if velocidade == 'normal' else 0.01
+    if reproduzir_movimentos:
+        pyautogui.PAUSE = 0.005  # movimento mais rápido
+    else:
+        pyautogui.PAUSE = 0.3  # velocidade padrão
 
     for acao in acoes:
+        if abortar_reproducao:
+            print("Reprodução abortada!")
+            abortar_reproducao = False
+            break
         if acao[0] == 'move' and reproduzir_movimentos:
-            pyautogui.moveTo(acao[1], acao[2], duration=duracao_movimento)
+            pyautogui.moveTo(acao[1], acao[2])
         elif acao[0] == 'click':
             if acao[3] == 'left':
                 pyautogui.click(acao[1], acao[2], button='left')
             elif acao[3] == 'right':
                 pyautogui.click(acao[1], acao[2], button='right')
-            time.sleep(duracao_espera)
+
+    listener.stop()
 
 def main():
     while True:
-        opcao = input("\nEscolha uma opção (gravar/carregar/reproduzir/sair): ").lower()
+        opcao = selecionar_opcao(["Gravar", "Carregar", "Reproduzir", "Sair"]).lower()
+
         if opcao == "gravar":
             gravar_acoes()
         elif opcao == "carregar":
             carregar_acoes()
             print("Ações carregadas com sucesso!")
         elif opcao == "reproduzir":
-            velocidade = input("Escolha a velocidade (rápido/normal): ").lower()
-            movimentos = input("Deseja reproduzir movimentos? (sim/nao): ").lower()
-            reproduzir_acoes(velocidade)
+            movimentos = selecionar_opcao(["Reproduzir movimento", "Somente cliques"]).lower()
+            reproduzir_acoes(reproduzir_movimentos=(movimentos == 'reproduzir movimento'))
         elif opcao == "sair":
             break
         else:
